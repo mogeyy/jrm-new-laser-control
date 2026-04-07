@@ -2,6 +2,7 @@ from PyQt6.QtGui import QMouseEvent
 from PyQt6.QtCore import Qt
 import numpy as np
 from constants import w, h, border, capped_speed, max_cursor_speed
+from calibration import get_target_positions, N_POINTS, calibration_map
 
 class MainWindowLogic:
 
@@ -13,26 +14,22 @@ class MainWindowLogic:
     def line_velocity_slider_value_changed(self, value):
         self.line_velocity_label.setText(f"{value}")
         self.line_velocity = value
-        # print(f"Slider value changed to: {value}")
 
     # Circle Radius Slider Control
     def circle_radius_slider_value_changed(self, value):
         self.circle_radius_label.setText(f"{value}")
         self.circle_radius = value
-        # print(f"Slider value changed to: {value}")
 
     # Circle Velocity Slider Control
     def circle_velocity_slider_value_changed(self, value):
         self.circle_velocity_label.setText(f"{value}")
         self.circle_velocity = value
-        # print(f"Slider value changed to: {value}")
 
     # User updates the max value of the slider through the input field
     def update_slider_max(self):
         try:
             max_value = int(self.line_velocity_input.text())
             self.line_velocity_slider.setMaximum(max_value)
-            # self.line_velocity_slider_label.setText(f"{max_value}")
             print(f"Slider max value updated to: {max_value}")
         except ValueError:
             print("Invalid input for slider max value. Please enter an integer.")
@@ -43,7 +40,12 @@ class MainWindowLogic:
 
     '''================
     LASER POINT CONTROL
-    ================='''
+    ================'''
+
+    def _update_preview(self, local_x: float, local_y: float):
+        """Push raw laser position to the preview window, which applies the warp."""
+        if hasattr(self, 'preview_window') and self.preview_window is not None:
+            self.preview_window.set_dot(local_x, local_y)
 
     def update_game(self):
         # Current mouse position
@@ -52,23 +54,23 @@ class MainWindowLogic:
         center_x = radius
         center_y = radius
 
+        # Don't move the laser during active calibration
+        if self.current_mode == "Calibration Mode":
+            return
+
         '''=================
         CURSOR MODE (DEFAULT)
         ================='''
 
         if self.current_mode == "Cursor Mode":
-        # check distance between cursor and center of target circle
             dist_mouse_from_center = np.sqrt((mouse_x - center_x)**2 + (mouse_y - center_y)**2)
-        
-            # If mouse is outside, self.active_target stays at the last valid coordinate
+
             if dist_mouse_from_center <= radius:
                 self.active_target = (mouse_x, mouse_y)
-            
-            # Ensure active_target exists (initialization safety)
+
             if not hasattr(self, 'active_target'):
                 self.active_target = self.laser_point_position
 
-            # Calculate movement vector toward active target
             target_x, target_y = self.active_target
             prev_x, prev_y = self.laser_point_position
 
@@ -77,19 +79,17 @@ class MainWindowLogic:
             dist_to_target = np.sqrt(dx**2 + dy**2)
 
             if self.capped_speed and dist_to_target > self.max_cursor_speed:
-                # Move at max speed toward the last valid inside position
                 move_x = prev_x + (dx / dist_to_target) * self.max_cursor_speed
                 move_y = prev_y + (dy / dist_to_target) * self.max_cursor_speed
             else:
-                # If we are close or uncapped, just arrive
                 move_x, move_y = target_x, target_y
 
-            # Move the laser point
             global_x = int(self.inner_circle.x() + move_x - self.laser_point.width() / 2)
             global_y = int(self.inner_circle.y() + move_y - self.laser_point.height() / 2)
-            
+
             self.laser_point.move(global_x, global_y)
             self.laser_point_position = (move_x, move_y)
+            self._update_preview(move_x, move_y)
 
             '''======
             LINE MODE
@@ -117,23 +117,33 @@ class MainWindowLogic:
                 global_y = int(self.inner_circle.y() + move_y - self.laser_point.height() / 2)
                 self.laser_point.move(global_x, global_y)
                 self.laser_point_position = (move_x, move_y)
+                self._update_preview(move_x, move_y)
 
             '''========
             CIRCLE MODE
             ========'''
 
         elif self.current_mode == "Circle Mode":
-            rotation_rate = self.circle_velocity # per second
-            self.current_angle += rotation_rate if self.circle_mode_clockwise else -rotation_rate #* (1/60) # assuming update_game is called 60 times per second
-            radius = self.circle_radius
-            move_x = int(mouse_x - border + center_x + radius * np.cos(np.radians(self.current_angle)) - self.laser_point.width() / 2)
-            move_y = int(mouse_y + 2*border + 0*center_y + radius * np.sin(np.radians(self.current_angle)) - self.laser_point.height() / 2)
+            rotation_rate = self.circle_velocity
+            self.current_angle += rotation_rate if self.circle_mode_clockwise else -rotation_rate
+            r = self.circle_radius
+            move_x = int(mouse_x - border + center_x + r * np.cos(np.radians(self.current_angle)) - self.laser_point.width() / 2)
+            move_y = int(mouse_y + 2*border + 0*center_y + r * np.sin(np.radians(self.current_angle)) - self.laser_point.height() / 2)
+
             self.laser_point.move(move_x, move_y)
+            self._update_preview(move_x, move_y)
+
+    
+    '''=============================
+    LEFT CLICK AND KEYBOARD HANDLERS
+    ============================='''
 
     def mousePressEvent(self, event: QMouseEvent):
         if event.button() == Qt.MouseButton.LeftButton:
             click_x, click_y = event.position().x(), event.position().y()
             print(f"Mouse clicked at: ({click_x}, {click_y})")
+
+            # ── Line Mode click handling ───────────────────────────────────
             if self.current_mode == "Line Mode" and not self.line_mode_capturing:
                 geometry = self.inner_circle.geometry()
                 center_x = geometry.x() + geometry.width() / 2
@@ -151,7 +161,21 @@ class MainWindowLogic:
     def keyPressEvent(self, event):
         print(self.current_mode)
         if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
-            if self.current_mode == "Line Mode":# and self.line_mode_path:
+            # ── Calibration: Enter confirms current laser position ─────────
+            if self.current_mode == "Calibration Mode":
+                if hasattr(self, '_cal_overlay') and self._cal_overlay is not None:
+                    from PyQt6.QtGui import QCursor
+                    # QCursor.pos() always works regardless of focus/event routing
+                    global_pos = QCursor.pos()
+                    local_pos  = self.inner_circle.mapFromGlobal(global_pos)
+                    self._cal_overlay.current_mouse_pos = (float(local_pos.x()), float(local_pos.y()))
+                    print(f"  Enter pressed, cursor at inner_circle local: ({local_pos.x():.1f}, {local_pos.y():.1f})")
+                    done = self._cal_overlay.register_current_position()
+                    if done:
+                        self._finish_calibration()
+                return
+
+            if self.current_mode == "Line Mode":
                 if not self.line_mode_capturing:
                     print("Starting Line Mode path traversal.")
                     self.line_mode_capturing = True
@@ -161,18 +185,92 @@ class MainWindowLogic:
             else:
                 print("No points captured for Line Mode or not in Line Mode.")
 
+    '''=============================
+    LASER DOT MOTION CONTROL FOR GUI
+    ============================='''
+
+
     def laser_point_mouse_move(self, event: QMouseEvent):
         self.cursor_position = (event.position().x(), event.position().y())
 
-    '''=========
-    MODE HANDLER - hides or shows UI elements based on which mode is selected
-    ========='''
-    
+    '''=============================
+    CALIBRATION MODE IMPLEMENTATION
+    ============================='''
+
+    def on_calibration_mode_clicked(self):
+        """Enter calibration mode: show the overlay and wait for 8 Enter presses."""
+        from PyQt6.QtWidgets import QApplication
+        from objects import CalibrationOverlay
+
+        print("Calibration Mode activated! Point your laser at each numbered target and click it.")
+        self.current_mode = "Calibration Mode"
+
+        # Hide all slider panels
+        for widget in [self.line_velocity_slider, self.line_velocity_label,
+                       self.line_velocity_input, self.line_velocity_title,
+                       self.circle_radius_slider, self.circle_radius_label,
+                       self.circle_radius_input, self.circle_radius_title,
+                       self.circle_velocity_slider, self.circle_velocity_label,
+                       self.circle_velocity_input, self.circle_velocity_title]:
+            widget.setVisible(False)
+
+        # Reset any previous calibration overlay
+        if hasattr(self, '_cal_overlay') and self._cal_overlay is not None:
+            self._cal_overlay.deleteLater()
+            self._cal_overlay = None
+
+        # Build the 8 target positions on the inner circle
+        ic = self.inner_circle
+        cx = ic.width()  / 2
+        cy = ic.height() / 2
+        ring_radius = cx * 0.75   # 75 % of the inner circle radius
+
+        self._cal_target_positions = get_target_positions(cx, cy, ring_radius)
+        self._cal_real_positions   = self._cal_target_positions   # ideal = target
+
+        # Create and show the overlay on top of inner_circle
+        self._cal_overlay = CalibrationOverlay(ic, self._cal_target_positions)
+        self._cal_overlay.raise_()
+        self._cal_overlay.show()
+
+    def _finish_calibration(self):
+        """Called once all 8 clicks have been registered."""
+        screen_pts = self._cal_overlay.clicked_points   # what user clicked
+        real_pts   = self._cal_real_positions           # ideal target positions
+
+        calibration_map.fit(screen_pts, real_pts)
+        print("Calibration complete! Warp map fitted.")
+        print(f"  Screen points : {screen_pts}")
+        print(f"  Real points   : {real_pts}")
+
+        # Remove overlay and return to Cursor Mode
+        self._cal_overlay.hide()
+        self._cal_overlay.deleteLater()
+        self._cal_overlay = None
+
+        self.current_mode = "Cursor Mode"
+        # Re-hide mode-specific panels (cursor mode shows none)
+        for widget in [self.line_velocity_slider, self.line_velocity_label,
+                       self.line_velocity_input, self.line_velocity_title,
+                       self.circle_radius_slider, self.circle_radius_label,
+                       self.circle_radius_input, self.circle_radius_title,
+                       self.circle_velocity_slider, self.circle_velocity_label,
+                       self.circle_velocity_input, self.circle_velocity_title]:
+            widget.setVisible(False)
+
+    def calibration_mode(self):
+        """Alias kept for compatibility."""
+        self.on_calibration_mode_clicked()
+
+    '''==========
+    MODE HANDLERS
+    =========='''
+
     def on_cursor_mode_clicked(self):
         self.current_mode = "Cursor Mode"
         print("Cursor Mode activated!")
-        for i in [self.line_velocity_slider, 
-                    self.line_velocity_label, 
+        for i in [self.line_velocity_slider,
+                    self.line_velocity_label,
                     self.line_velocity_input,
                     self.line_velocity_title,
                     self.circle_radius_slider,
@@ -188,8 +286,8 @@ class MainWindowLogic:
     def on_circle_mode_clicked(self):
         print("Circle Mode activated!")
         self.current_mode = "Circle Mode"
-        for i in [self.line_velocity_slider, 
-                    self.line_velocity_label, 
+        for i in [self.line_velocity_slider,
+                    self.line_velocity_label,
                     self.line_velocity_input,
                     self.line_velocity_title]:
             i.setVisible(False)
@@ -202,7 +300,7 @@ class MainWindowLogic:
                     self.circle_velocity_input,
                     self.circle_velocity_title]:
             i.setVisible(True)
-    
+
     def on_line_mode_clicked(self):
         print("Line Mode activated! Click any number of points within the circle, then press enter to begin automated laser movement.")
         self.current_mode = "Line Mode"
@@ -220,8 +318,8 @@ class MainWindowLogic:
                     self.circle_velocity_input,
                     self.circle_velocity_title]:
             i.setVisible(False)
-        for i in [self.line_velocity_slider, 
-                    self.line_velocity_label, 
+        for i in [self.line_velocity_slider,
+                    self.line_velocity_label,
                     self.line_velocity_input,
                     self.line_velocity_title]:
             i.setVisible(True)
@@ -229,7 +327,7 @@ class MainWindowLogic:
     def on_capped_speed_toggled(self):
         self.capped_speed = not self.capped_speed
         print(f"Capped Speed set to: {self.capped_speed}")
-    
+
     def on_rotate_clockwise_toggled(self):
         self.circle_mode_clockwise = not self.circle_mode_clockwise
         print(f"Circle Mode Rotate Clockwise set to: {self.circle_mode_clockwise}")
