@@ -59,8 +59,8 @@ class CalibrationMap:
                              "Move the mouse to each target before pressing Enter.")
 
         # Use linear kernel with smoothing — robust with 8 sparse points
-        self._rbf_x = RBFInterpolator(sp, rp[:, 0], kernel='linear', smoothing=0.0)
-        self._rbf_y = RBFInterpolator(sp, rp[:, 1], kernel='linear', smoothing=0.0)
+        self._rbf_x = RBFInterpolator(rp, sp[:, 0], kernel='linear', smoothing=0.0)
+        self._rbf_y = RBFInterpolator(rp, sp[:, 1], kernel='linear', smoothing=0.0)
         self.is_fitted = True
 
     def apply(self, x, y):

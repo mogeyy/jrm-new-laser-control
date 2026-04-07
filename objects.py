@@ -55,6 +55,7 @@ class CalibrationOverlay(QWidget):
 
     def mouseMoveEvent(self, event):
         self.current_mouse_pos = (event.position().x(), event.position().y())
+        self.window().cursor_position = self.current_mouse_pos
         event.accept()
 
     # ── drawing ───────────────────────────────────────────────────────────────
