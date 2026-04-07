@@ -4,6 +4,7 @@ from PyQt6.QtGui import QPalette
 from PyQt6.QtCore import QTimer
 from constants import w, h, border, max_cursor_speed, capped_speed
 from eventhandlers import MainWindowLogic
+from daqcontrol import LaserController
 from objects import Square, Circle, PreviewWindow
 from uielements import UIButton, DefaultSliderSet, UIToggle, UILabel, UIInput
 
@@ -36,6 +37,10 @@ class MainWindow(QMainWindow, MainWindowLogic):
 
         # Calibration overlay handle (None when not active)
         self._cal_overlay = None
+
+        # ── DAQ initialisation ───────────────────────────────────────────
+        self.daq = LaserController()
+
 
         # ── Preview window (calibrated galvo output) ──────────────────────
         ic_diameter = h - 2 * border - 2 * 10   # mirrors inner_circle size
@@ -200,6 +205,12 @@ class MainWindow(QMainWindow, MainWindowLogic):
         self.circle_velocity_slider.valueChanged.connect(self.circle_velocity_slider_value_changed)
         self.circle_velocity_input.returnPressed.connect(self.update_slider_max)
 
+
+    def closeEvent(self, event):
+        """Shut down the DAQ safely when the window is closed."""
+        if hasattr(self, 'daq') and self.daq is not None:
+            self.daq.close()
+        super().closeEvent(event)
 
 '''
 ==================================================================

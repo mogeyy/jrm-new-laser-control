@@ -47,6 +47,22 @@ class MainWindowLogic:
         if hasattr(self, 'preview_window') and self.preview_window is not None:
             self.preview_window.set_dot(local_x, local_y)
 
+    def _send_to_daq(self, local_x: float, local_y: float):
+        """
+        Convert calibrated pixel coords to voltages and send to the DAQ.
+        Pixel (0,0) -> min_volt, pixel (diameter,diameter) -> max_volt, linear.
+        """
+        if not (hasattr(self, 'daq') and self.daq is not None):
+            return
+        from calibration import calibration_map
+        cal_x, cal_y = calibration_map.apply(local_x, local_y)
+        diameter = float(self.inner_circle.width())
+        min_v = self.daq.min_volt
+        max_v = self.daq.max_volt
+        volt_x = min_v + (cal_x / diameter) * (max_v - min_v)
+        volt_y = min_v + (cal_y / diameter) * (max_v - min_v)
+        self.daq.set_position(volt_x, volt_y)
+
     def update_game(self):
         # Current mouse position
         mouse_x, mouse_y = self.cursor_position
@@ -90,6 +106,7 @@ class MainWindowLogic:
             self.laser_point.move(global_x, global_y)
             self.laser_point_position = (move_x, move_y)
             self._update_preview(move_x, move_y)
+            self._send_to_daq(move_x, move_y)
 
             '''======
             LINE MODE
@@ -118,6 +135,7 @@ class MainWindowLogic:
                 self.laser_point.move(global_x, global_y)
                 self.laser_point_position = (move_x, move_y)
                 self._update_preview(move_x, move_y)
+                self._send_to_daq(move_x, move_y)
 
             '''========
             CIRCLE MODE
@@ -132,6 +150,7 @@ class MainWindowLogic:
 
             self.laser_point.move(move_x, move_y)
             self._update_preview(move_x, move_y)
+            self._send_to_daq(move_x, move_y)
 
     
     '''=============================

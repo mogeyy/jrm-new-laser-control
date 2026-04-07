@@ -39,6 +39,7 @@ class LaserController:
                 
                 # Write the two voltage values to the two channels
                 self.task.write([voltage_x, voltage_y], auto_start=True)
+                print(f"Set laser position to voltages: X={voltage_x:.2f} V, Y={voltage_y:.2f} V")
             except Exception as e:
                 print(f"Error writing to DAQ: {e}")
 
