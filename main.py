@@ -61,6 +61,13 @@ class MainWindow(QMainWindow, MainWindowLogic):
                                    h - 2 * border - 2 * difference, h - 2 * border - 2 * difference,
                                    color=self.palette().color(QPalette.ColorRole.Window).name())
 
+
+        self.current_voltages = UILabel(text="(0,0)", parent=central_widget)
+        self.current_voltages.move(border, int(h - border - (h / 12) * 4 - border / 2))
+        self.current_voltages.show()
+        
+        
+
         '''========================
         PRIMARY BUTTONS UI ELEMENTS
         ========================'''

@@ -62,6 +62,9 @@ class MainWindowLogic:
         volt_x = min_v + (cal_x / diameter) * (max_v - min_v)
         volt_y = min_v + (cal_y / diameter) * (max_v - min_v)
         self.daq.set_position(volt_x, volt_y)
+        self.daq_x = volt_x
+        self.daq_y = volt_y
+
 
     def update_game(self):
         # Current mouse position
@@ -70,14 +73,28 @@ class MainWindowLogic:
         center_x = radius
         center_y = radius
 
-        # Don't move the laser during active calibration
-        if self.current_mode == "Calibration Mode":
-            return
 
         '''=================
         CURSOR MODE (DEFAULT)
         ================='''
 
+        if self.current_mode == "Calibration Mode":
+            # Track cursor using calibration_map instead of inner_circle
+            mouse_x, mouse_y = self.cursor_position
+            # Map the mouse position using calibration_map
+            cal_x, cal_y = calibration_map.apply(mouse_x, mouse_y)
+            # Use the same speed logic as Cursor Mode
+            prev_x, prev_y = self.laser_point_position
+            dx = cal_x - prev_x
+            dy = cal_y - prev_y
+            dist_to_target = np.sqrt(dx**2 + dy**2)
+            move_x, move_y = cal_x, cal_y
+            global_x = int(self.inner_circle.x() + move_x - self.laser_point.width() / 2)
+            global_y = int(self.inner_circle.y() + move_y - self.laser_point.height() / 2)
+            self.laser_point.move(global_x, global_y)
+            self.laser_point_position = (move_x, move_y)
+            self._update_preview(move_x, move_y)
+            self._send_to_daq(move_x, move_y)
         if self.current_mode == "Cursor Mode":
             dist_mouse_from_center = np.sqrt((mouse_x - center_x)**2 + (mouse_y - center_y)**2)
 
@@ -151,6 +168,8 @@ class MainWindowLogic:
             self.laser_point.move(move_x, move_y)
             self._update_preview(move_x, move_y)
             self._send_to_daq(move_x, move_y)
+
+        self.current_voltages.setText(f"({self.daq_x:.2f}, {self.daq_y:.2f})")
 
     
     '''=============================

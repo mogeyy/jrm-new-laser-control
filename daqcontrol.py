@@ -29,17 +29,17 @@ class LaserController:
             print(f"Error initializing DAQ: {e}")
             self.task = None
 
-    def set_position(self, voltage_x, voltage_y):
-        """Sends a voltage pair to the DAQ to position the laser."""
+    def set_position(self, voltage_x, voltage_y, callback=None):
+        """Sends a voltage pair to the DAQ to position the laser. Optionally calls a callback with the voltages."""
         if self.task:
             try:
                 # Clamp voltages to be within the safe range
                 voltage_x = max(self.min_volt, min(self.max_volt, voltage_x))
                 voltage_y = max(self.min_volt, min(self.max_volt, voltage_y))
-                
                 # Write the two voltage values to the two channels
                 self.task.write([voltage_x, voltage_y], auto_start=True)
-                print(f"Set laser position to voltages: X={voltage_x:.2f} V, Y={voltage_y:.2f} V")
+                if callback:
+                    callback(voltage_x, voltage_y)
             except Exception as e:
                 print(f"Error writing to DAQ: {e}")
 
