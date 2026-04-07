@@ -223,7 +223,7 @@ class MainWindowLogic:
         ic = self.inner_circle
         cx = ic.width()  / 2
         cy = ic.height() / 2
-        ring_radius = cx * 0.75   # 75 % of the inner circle radius
+        ring_radius = cx * 0.95   # 75 % of the inner circle radius
 
         self._cal_target_positions = get_target_positions(cx, cy, ring_radius)
         self._cal_real_positions   = self._cal_target_positions   # ideal = target
